@@ -3,6 +3,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import precision_score, recall_score, accuracy_score, f1_score
 from xgboost import XGBClassifier
+from transformers import TFBertForSequenceClassification
+from simpletransformers.classification import ClassificationModel
 
 import pandas as pd
 import torch
@@ -133,12 +135,23 @@ class BiLSTMClassifierWrapper(BinaryClassifier):
         return predicted    
 
 class DistilBERTClassifier(BinaryClassifier):
+    def __init__(self) -> None:
+        # self.classifier = TFBertForSequenceClassification.from_pretrained("distilbert-base-uncased")
 
-    def __init__(self, **kwargs) -> None:
-        self.classifier = None
+        self.classifier = ClassificationModel(
+            "distilbert", 
+            "./data/distilbert-base-uncased",
+            num_labels=2,
+            reprocess_input_data=True,
+            fp16=True,
+            num_train_epochs=5,
+            use_cuda=False,
+        )
+
+        print(self.classifier.summary())
 
     def fit_classifier(self, X_train, y_train):
-        self.classifier.fit(X_train, y_train)
-    
-    def predict_classifier(self, X):
-        return self.classifier.predict(X)
+        self.classifier.train_model(X_train, y_train)
+
+    def fit_classifier(self, X_train, y_train):
+        self.classifier.train_model(X_train, y_train)
