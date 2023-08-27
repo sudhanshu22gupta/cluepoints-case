@@ -70,7 +70,12 @@ class RandomForestClf(BinaryClassifier):
 
 class MLPClf(BinaryClassifier):
     def __init__(self) -> None:
-        self.classifier = MLPClassifier(warm_start=False, max_iter=1000, verbose=True)
+        self.classifier = MLPClassifier(
+            hidden_layer_sizes = [512, 256, 64],
+            warm_start=False, 
+            max_iter=1000, 
+            verbose=True,
+        )
 
 class XGBClf(BinaryClassifier):
     def __init__(self) -> None:
