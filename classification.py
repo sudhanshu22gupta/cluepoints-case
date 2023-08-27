@@ -145,18 +145,14 @@ class DistilBERTClassifier(BinaryClassifier):
 
         self.classifier = ClassificationModel(
             "distilbert", 
-            "./data/distilbert-base-uncased",
+            "distilbert-base-uncased",
             num_labels=2,
-            reprocess_input_data=True,
-            fp16=True,
-            num_train_epochs=5,
+            args={"num_train_epochs":5},
             use_cuda=False,
         )
 
-        print(self.classifier.summary())
-
     def fit_classifier(self, X_train, y_train):
-        self.classifier.train_model(X_train, y_train)
+        df_train = pd.concat([X_train.reset_index(drop=True), pd.Series(y_train)], axis=1)
+        df_train.columns = ["text", "labels"]
+        self.classifier.train_model(df_train)
 
-    def fit_classifier(self, X_train, y_train):
-        self.classifier.train_model(X_train, y_train)
