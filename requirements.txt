@@ -1,0 +1,13 @@
+ipykernel
+numpy
+pandas
+scikit-learn
+torch
+wordcloud
+nltk
+matplotlib
+transformers
+bs4
+giskard
+xgboost
+seaborn

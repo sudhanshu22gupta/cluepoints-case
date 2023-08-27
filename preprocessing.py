@@ -12,9 +12,6 @@ import re
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
-from sklearn.model_selection import train_test_split
-
 class preprocMovieReview:
 
     def __init__(self, ds_review_text) -> None:
@@ -73,51 +70,15 @@ class preprocMovieReview:
         stemmer = PorterStemmer()
         tokens = [stemmer.stem(token) for token in tokens]
         return tokens
-
-def train_val_test_split_movie_reviews(df, reviews_col, target_col, test_percent: float, val_percent: float=0.0):
-
-    assert test_percent+val_percent < 100
-    train_percent = 100 - (test_percent+val_percent)
-    total_size = len(df)
-
-    # shuffle the dataset
-    df_in = df.copy().sample(total_size)
     
-    df_in_train = df_in.iloc[:int((train_percent*total_size)/100)]
-    X_train, y_train = df_in_train[reviews_col], df_in_train[target_col].values
-    df_in = df_in.iloc[int((train_percent*total_size)/100):]
 
-    df_in_test = df_in.iloc[:int((test_percent*total_size)/100)]
-    X_test, y_test = df_in_test[reviews_col], df_in_test[target_col].values
-    df_in = df_in.iloc[int((test_percent*total_size)/100):]
+class preprocMedicalAppointment:
 
-    if val_percent:
-        df_in_val = df_in
-        X_val, y_val = df_in_val[reviews_col], df_in_val[target_col].values
-    else:
-        X_val, y_val = pd.Series(), pd.Series()
-    
-    return X_train, y_train, X_test, y_test, X_val, y_val
+    def __init__(self) -> None:
+        pass
 
-class Vectorizer:
-
-    def __init__(self, vectorizer_type) -> None:
-        
-        if vectorizer_type == 'tfidf':
-            self.initialize_tfidf_vectorizer()
-        elif vectorizer_type == 'count':
-            self.initialize_count_vectorizer()
-        else:
-            raise NotImplementedError
-    
-    def initialize_tfidf_vectorizer(self):
-        self.vectorizer = TfidfVectorizer(min_df=0.0, max_df=1.0, use_idf=True, ngram_range=(1,3))
-
-    def initialize_count_vectorizer(self):
-        self.vectorizer = CountVectorizer(min_df=0.0, max_df=1.0, binary=False, ngram_range=(1,3))
-
-    def apply_transform_train(self, reviews):
-        return self.vectorizer.fit_transform(reviews)
-
-    def apply_transform_test(self, reviews):
-        return self.vectorizer.transform(reviews)
+    def remove_outliers_age(self, df_medical_appointment, keep_range=(0, 100)):
+        return df_medical_appointment.loc[
+            (df_medical_appointment['Age'] >= keep_range[0])
+            & (df_medical_appointment['Age'] <= keep_range[1])
+            ]
