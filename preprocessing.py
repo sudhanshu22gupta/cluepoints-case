@@ -6,7 +6,7 @@ from nltk.stem.porter import PorterStemmer
 from nltk.tokenize import word_tokenize, sent_tokenize
 
 from transformers import AutoTokenizer
-
+import torch
 from typing import List
 import re
 import pandas as pd
@@ -33,10 +33,44 @@ class preprocMovieReview:
 
     def bert_text_sanitization_pipeline(self):
         tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
+        
         for i, review_text in enumerate(self.ds_review_text):
             review_text_filtered = tokenizer(review_text, truncation=True)
             self.ds_review_text_filtered.iloc[i] = review_text_filtered
         return self.ds_review_text_filtered
+
+    def distilbert_text_sanitization_pipeline(self, max_len):
+        self.tokenizer = AutoTokenizer.from_pretrained('distilbert-base-cased')
+        # token ID storage
+        input_ids = []
+        # attention mask storage
+        attention_masks = []
+        # for every review:
+        for review_text in self.ds_review_text:
+            # `encode_plus` will:
+            #   (1) Tokenize the sentence.
+            #   (2) Prepend the `[CLS]` token to the start.
+            #   (3) Append the `[SEP]` token to the end.
+            #   (4) Map tokens to their IDs.
+            #   (5) Pad or truncate the sentence to `max_length`
+            #   (6) Create attention masks for [PAD] tokens.
+            encoded_dict = self.tokenizer.encode_plus(
+                                review_text,  # document to encode.
+                                add_special_tokens=True,  # add '[CLS]' and '[SEP]'
+                                max_length=max_len,  # set max length
+                                truncation=True,  # truncate longer messages
+                                padding='max_length',  # add padding
+                                return_attention_mask=True,  # create attn. masks
+                                return_tensors='pt'  # return pytorch tensors
+                        )
+
+            # add the tokenized sentence to the list
+            input_ids.append(encoded_dict['input_ids'])
+            # and its attention mask (differentiates padding from non-padding)
+            attention_masks.append(encoded_dict['attention_mask'])
+
+        return torch.cat(input_ids, dim=0), torch.cat(attention_masks, dim=0)
+
 
     def remove_special_characters(self, review_text):
         

@@ -3,13 +3,18 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import precision_score, recall_score, accuracy_score, f1_score
 from xgboost import XGBClassifier
-from transformers import TFBertForSequenceClassification
-from simpletransformers.classification import ClassificationModel
+from transformers import DistilBertForSequenceClassification
+from skopt import BayesSearchCV
 
+from preprocessing import preprocMovieReview
 import pandas as pd
+import numpy as np
 import torch
 import torch.nn as nn
+from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
+from datetime import datetime
+from IPython.display import clear_output
 
 class BinaryClassifier:
 
@@ -69,6 +74,18 @@ class LogisticRegressionClf(BinaryClassifier):
 class RandomForestClf(BinaryClassifier):
     def __init__(self) -> None:
         self.classifier = RandomForestClassifier()
+
+    def hyperparmater_tuning(self, X_train, y_train, param_space, n_iter=20, cv=5, n_jobs=8):
+        self.bayes_search = BayesSearchCV(
+            self.classifier,
+            param_space,
+            n_iter=n_iter,
+            cv=cv,
+            n_jobs=n_jobs,
+        )
+        self.bayes_search.fit(X_train, y_train)
+        self.classifier = RandomForestClassifier(**self.bayes_search.best_params_)
+        self.fit_classifier(X_train, y_train)
 
 class MLPClf(BinaryClassifier):
     def __init__(self) -> None:
@@ -139,24 +156,77 @@ class BiLSTMClassifierWrapper(BinaryClassifier):
             _, predicted = torch.max(outputs, 1)
         return predicted    
 
-class DistilBERTClassifier(BinaryClassifier):
+class DistilBERTClassifier(nn.Module):
+
     def __init__(self) -> None:
-        # self.classifier = TFBertForSequenceClassification.from_pretrained("distilbert-base-uncased")
-
-        self.classifier = ClassificationModel(
-            "distilbert", 
-            "./data/distilbert-base-uncased",
+        super().__init__()
+        self.classifier = DistilBertForSequenceClassification.from_pretrained(
+            "distilbert-base-uncased", 
             num_labels=2,
-            reprocess_input_data=True,
-            fp16=True,
-            num_train_epochs=5,
-            use_cuda=False,
+            # seq_classif_dropout=0.3,
         )
+        self.optimizer = Adam(self.parameters(), lr=3e-6)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        print(self.classifier.summary())
+    def preprocess_input(self, X_train, y_train, max_len=512):
+        # create tokenized data
+        self.preprocessor = preprocMovieReview(X_train.values)
+        input_ids, attention_masks = self.preprocessor.distilbert_text_sanitization_pipeline(max_len=max_len)
+        # convert the labels into tensors.
+        labels = torch.tensor(y_train, dtype=torch.long)
+        return TensorDataset(input_ids, attention_masks, labels)
 
-    def fit_classifier(self, X_train, y_train):
-        self.classifier.train_model(X_train, y_train)
+    def fit_classifier(self, X_train, y_train, X_val, y_val, batch_size=8, n_epochs=2):
 
-    def fit_classifier(self, X_train, y_train):
-        self.classifier.train_model(X_train, y_train)
+        self.dl_params = {
+            'batch_size': batch_size,
+            'shuffle': True,
+            'num_workers': 0
+            }
+        train_dataset = self.preprocess_input(X_train, y_train)
+        val_dataset = self.preprocess_input(X_val, y_val)
+        self.dataloader_train = DataLoader(train_dataset, **self.dl_params)
+        self.dataloader_val = DataLoader(val_dataset, **self.dl_params)
+
+        for epoch_num in range(n_epochs):
+            self.train()
+            train_loss = 0
+            for step_num, train_data_batch in enumerate(self.dataloader_train):
+                token_ids, masks, labels = tuple(t.to(self.device) for t in train_data_batch)
+                model_output = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
+                
+                batch_loss = model_output.loss
+                train_loss += batch_loss.item()
+
+                self.zero_grad()
+                batch_loss.backward()
+
+                nn.utils.clip_grad_norm_(parameters=self.classifier.parameters(), max_norm=1.0)
+                self.optimizer.step()
+                
+                clear_output(wait=True)
+                print('Epoch: ', epoch_num + 1)
+                print("\r" + "{0}/{1} loss: {2} ".format(step_num, len(self.dataloader_train), train_loss / (step_num + 1)))
+
+    def predict_classifier(self, X_test, y_test):
+        test_dataset = self.preprocess_input(X_test, y_test)
+        self.dataloader_test = DataLoader(test_dataset, **self.dl_params)
+        self.eval()
+        pred_probs = []
+        with torch.no_grad():
+            for step_num, batch_data in enumerate(self.dataloader_test):
+                token_ids, masks, labels = tuple(t.to(self.device) for t in batch_data)
+                model_output = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
+                numpy_logits = model_output.logits.cpu().detach().numpy()
+                pred_probs.extend(list(numpy_logits))
+                clear_output(wait=True)
+                print("\r" + "{0}/{1}".format(step_num, len(self.dataloader_test)))
+        return (np.hstack(pred_probs) > 0.5).astype(int)
+
+    def evaluate_classifier(self, y_true, y_pred):
+        precision = precision_score(y_true, y_pred)
+        recall = recall_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred)
+        accuracy = accuracy_score(y_true, y_pred)
+        # print(f"precision={precision}\nrecall={recall}\nf1={f1}\naccuracy={accuracy}")
+        return precision, recall, f1, accuracy
