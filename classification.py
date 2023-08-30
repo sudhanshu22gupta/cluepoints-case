@@ -13,8 +13,22 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
+
+import tensorflow as tf
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense, Dropout, Input, Conv1D, Bidirectional, LSTM, SpatialDropout1D, Embedding
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.losses import BinaryCrossentropy
+from tensorflow.keras.metrics import BinaryCrossentropy, Precision, Recall
+from tensorflow.keras.regularizers import l2 as l2_reg
+from scipy.sparse import csr_matrix
+
+import os
+import traceback
 from datetime import datetime
 from IPython.display import clear_output
+import matplotlib.pyplot as plt
 
 class BinaryClassifier:
 
@@ -100,73 +114,202 @@ class XGBClf(BinaryClassifier):
     def __init__(self) -> None:
         self.classifier = XGBClassifier()
 
-class BiLSTMClassifier(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(BiLSTMClassifier, self).__init__()
-        
-        self.hidden_size = hidden_size
-        # self.embeddings = nn.Embedding(input_size, hidden_size, padding_idx=0)
-        self.lstm = nn.LSTM(input_size, hidden_size, bidirectional=False, batch_first=True)
-        self.fc = nn.Linear(hidden_size * 1, output_size)  # *2 due to bidirectional
-        
-    def forward(self, x):
-        # x = torch.dstack([x, x])
-        # print(x.shape)
-        # x = self.embeddings(x)
-        print(x.shape)
-        _, (h_n, _) = self.lstm(x)
-        print(h_n.shape, h_n)
-        # h_n_concat = torch.cat((h_n[-2, :], h_n[-1, :]), dim=-1)
-        out = self.fc(h_n)  # Get the last time step's output
-        return out
-
-class BiLSTMClassifierWrapper(BinaryClassifier):
-    def __init__(self, input_size, hidden_size, output_size, batch_size, num_epochs, lr_init):
-        self.model = BiLSTMClassifier(input_size, hidden_size, output_size)
-        self.loss_fn = nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr_init)
-        self.batch_size = batch_size
-        self.num_epochs = num_epochs
-
-    def train_data_loader(self, X_train, y_train):
-        X_train = torch.tensor(X_train.toarray(), dtype=torch.float32)
-        y_train = torch.tensor(y_train, dtype=torch.long)
-        train_dataset = TensorDataset(X_train, y_train)
-        return DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
-
-    def fit_classifier(self, X_train, y_train):
-        self.model.train()
-        data_loader = self.train_data_loader(X_train, y_train)
-        for epoch in range(self.num_epochs):
-            for inputs, labels in data_loader:
-                print(inputs.shape, labels.shape)
-                self.optimizer.zero_grad()
-                outputs = self.model(inputs)
-                print(outputs, labels)
-                loss = self.loss_fn(outputs, labels)
-                loss.backward()
-                self.optimizer.step()
-            print(f'Epoch [{epoch+1}/{self.num_epochs}], Loss: {loss.item():.4f}')
+class BiLSTMClf:
     
+    def __init__(
+        self, 
+        embedding_dim,
+        vocab_size,
+        max_sequence_length,
+        HIDDEN_ACTIVATION,
+        MAX_EPOCHS,
+        LR_INIT,
+        BATCH_SIZE,
+        L2_REG_PENALTY,
+        CALLBACKS,
+        VERBOSITY_LEVEL,
+        SAVE_DIR,
+    ):
+        self.HIDDEN_ACTIVATION = HIDDEN_ACTIVATION
+        self.MAX_EPOCHS = MAX_EPOCHS
+        self.LR_INIT = LR_INIT
+        self.BATCH_SIZE = BATCH_SIZE
+        self.L2_REG_PENALTY = L2_REG_PENALTY
+        self.VERBOSITY_LEVEL = VERBOSITY_LEVEL
+        self.SAVE_DIR = SAVE_DIR
+        self.CALLBACKS = CALLBACKS
+        self.EMBEDDING_DIM = embedding_dim
+        self.VOCAB_SIZE = vocab_size
+        self.MAX_SEQUENCE_LENGTH = max_sequence_length
+
+        self.create_model_BiLSTM()
+        self.compile_model()
+        self.create_callbacks()
+
+    def create_model_BiLSTM(self, ):
+
+        # self.model = Sequential()
+        # self.model.add(Embedding(input_dim=self.VOCAB_SIZE, output_dim=128))
+        # # self.model.add(SpatialDropout1D(0.2))
+        # # self.model.add(Conv1D(64, 5, activation=self.HIDDEN_ACTIVATION))
+        # self.model.add(Bidirectional(LSTM(128, dropout=0.2, recurrent_dropout=0.2)))
+        # self.model.add(Dense(512, activation=self.HIDDEN_ACTIVATION, kernel_regularizer=l2_reg(self.L2_REG_PENALTY)))
+        # self.model.add(Dropout(0.2))
+        # self.model.add(Dense(512, activation=self.HIDDEN_ACTIVATION, kernel_regularizer=l2_reg(self.L2_REG_PENALTY)))
+        # self.model.add(Dense(1, activation='sigmoid'))
+
+        self.model = tf.keras.Sequential()
+        # Embedding layer
+        self.model.add(Embedding(
+            input_dim=self.VOCAB_SIZE, 
+            input_length=self.MAX_SEQUENCE_LENGTH,
+            output_dim=128,
+            ))  # You can adjust the embedding dimension
+        # Bidirectional LSTM layer
+        self.model.add(Bidirectional(LSTM(128)))  # You can adjust the number of units
+        # Dense layer for binary classification
+        self.model.add(Dense(1, activation='sigmoid'))
+
+        print(self.model.summary())
+
+    def create_callbacks(
+        self, 
+        min_delta=1e-4,
+        patience_es=20,
+        patience_rlrop=10,
+        factor_rlopl=0.1,
+        model_id=None,
+        chkpt_save_freq=25,
+        tensorboard_histogram_freq=25,
+    ):
+        
+        self.callbacks = []
+
+        if "es" in self.CALLBACKS:
+            es = EarlyStopping(
+                monitor='val_loss', 
+                min_delta=min_delta, 
+                patience=patience_es, 
+                verbose=1,
+                restore_best_weights=True,
+            )
+            self.callbacks.append(es)
+
+        if "rlrop" in self.CALLBACKS: 
+            rlrop = ReduceLROnPlateau(
+                monitor='val_loss', 
+                factor=factor_rlopl, 
+                patience=patience_rlrop, 
+                verbose=1,
+                min_delta=min_delta,
+            )
+            self.callbacks.append(rlrop)
+
+        if "chkpt" in self.CALLBACKS:
+            checkpoint_path = os.path.join(self.SAVE_DIR, f"checkpoint_{model_id}.ckpt")
+            chkpt = ModelCheckpoint(
+                filepath=checkpoint_path,
+                verbose=1,
+                save_weights_only=False,
+                save_best_only=True,
+                save_freq=chkpt_save_freq,
+            )
+            self.callbacks.append(chkpt)
+
+        if "tensorboard" in self.CALLBACKS:
+            tensorboard_logdir = os.path.join(self.SAVE_DIR)
+            if not os.path.exists(tensorboard_logdir):
+                os.makedirs(tensorboard_logdir)
+            tensorboard_callback = TensorBoard(
+                log_dir= tensorboard_logdir,
+                histogram_freq=tensorboard_histogram_freq,
+                )
+            self.callbacks.append(tensorboard_callback)
+
+    def compile_model(self):
+        self.model.compile(
+            optimizer=Adam(learning_rate=self.LR_INIT,),
+            loss='binary_crossentropy',
+            metrics=[
+                BinaryCrossentropy(name='binary_crossentropy'),
+                Precision(),
+                Recall(),
+            ]
+        )
+
+    def fit_classifier(self, X_train, y_train, X_val, y_val):
+        try:
+            X_train = X_train.toarray()
+            X_val = X_val.toarray()
+
+            self.history = self.model.fit(
+                x=X_train,
+                y=y_train,
+                batch_size=self.BATCH_SIZE,
+                epochs=self.MAX_EPOCHS,
+                validation_data=(X_val, y_val),
+                callbacks=self.callbacks,
+                verbose=self.VERBOSITY_LEVEL,
+            )
+            # Save the entire model as a SavedModel.
+            self.model.save(os.path.join(self.SAVE_DIR, f'{datetime.now().strftime("%Y%m%d%H%M%S")}_BiLSTM_classifier'))
+            self.plot_history()
+        except Exception:
+            print("Error in training")
+            traceback.print_exc()
+
+    def plot_history(self):
+        """
+        Plot Metrics: Loss, Precision and Recall across epochs for both train and validation sets.
+        Maybe not needed after tensorboard
+        """
+        fig, axs = plt.subplots(1, 3, sharey=True, figsize=(18, 6))
+        for i, metric in enumerate(['loss', 'precision', 'recall']):
+            ax = axs[i]
+
+            metric_key = metric
+            for key in self.history.history.keys():
+                if metric in key:
+                    metric_key = key
+                    break
+            ax.plot(self.history.history[f'{metric_key}'], label='train')
+            ax.plot(self.history.history[f'val_{metric_key}'], label='val')
+            
+            ax.set_title(f'{metric}')
+            ax.set_xlabel('Epochs')
+            ax.set_ylabel(metric)
+            ax.set_ylim(-0.1, 1.1)
+            ax.legend()
+        
+        plt.savefig(os.path.join(self.SAVE_DIR, f'{datetime.now().strftime("%Y%m%d%H%M%S")}_BiLSTM_classifier_Train_Val_Performance'))
+        plt.show()
+
+    def evaluate_classifier(self, y_true, y_pred):
+
+        precision = precision_score(y_true, y_pred)
+        recall = recall_score(y_true, y_pred)
+        f1 = f1_score(y_true, y_pred)
+        accuracy = accuracy_score(y_true, y_pred)
+
+        return precision, recall, f1, accuracy
+
     def predict_classifier(self, X):
-        self.model.eval()
-        X = torch.tensor(X.toarray(), dtype=torch.float32)
-        with torch.no_grad():
-            outputs = self.model(X)
-            _, predicted = torch.max(outputs, 1)
-        return predicted    
+        X = X.toarray()
+        return np.hstack(self.model.predict(X) > 0.5).astype(int)
+
 
 class DistilBERTClassifier(nn.Module):
 
     def __init__(self) -> None:
         super().__init__()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.classifier = DistilBertForSequenceClassification.from_pretrained(
             "distilbert-base-uncased", 
             num_labels=2,
             # seq_classif_dropout=0.3,
         )
-        self.optimizer = Adam(self.parameters(), lr=3e-6)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.classifier.to(self.device)
+        self.optimizer = Adam(self.parameters(), lr=1e-5)
 
     def preprocess_input(self, X_train, y_train, max_len=512):
         # create tokenized data
@@ -207,21 +350,22 @@ class DistilBERTClassifier(nn.Module):
                 clear_output(wait=True)
                 print('Epoch: ', epoch_num + 1)
                 print("\r" + "{0}/{1} loss: {2} ".format(step_num, len(self.dataloader_train), train_loss / (step_num + 1)))
+        torch.cuda.empty_cache()
 
     def predict_classifier(self, X_test, y_test):
         test_dataset = self.preprocess_input(X_test, y_test)
         self.dataloader_test = DataLoader(test_dataset, **self.dl_params)
         self.eval()
-        pred_probs = []
+        preds = np.array()
         with torch.no_grad():
             for step_num, batch_data in enumerate(self.dataloader_test):
                 token_ids, masks, labels = tuple(t.to(self.device) for t in batch_data)
                 model_output = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
                 numpy_logits = model_output.logits.cpu().detach().numpy()
-                pred_probs.extend(list(numpy_logits))
+                preds = np.append(preds, np.argmax(numpy_logits, axis=1).flatten())
                 clear_output(wait=True)
                 print("\r" + "{0}/{1}".format(step_num, len(self.dataloader_test)))
-        return (np.hstack(pred_probs) > 0.5).astype(int)
+        return preds
 
     def evaluate_classifier(self, y_true, y_pred):
         precision = precision_score(y_true, y_pred)

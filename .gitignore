@@ -1,6 +1,7 @@
 # Custom
 cache_dir/
 runs/
+assets/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

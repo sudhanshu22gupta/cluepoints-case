@@ -31,7 +31,7 @@ class preprocMovieReview:
 
         return self.ds_review_text_filtered
 
-    def bert_text_sanitization_pipeline(self):
+    def tensorflow_text_sanitization_pipeline(self):
         tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
         
         for i, review_text in enumerate(self.ds_review_text):
@@ -71,7 +71,6 @@ class preprocMovieReview:
 
         return torch.cat(input_ids, dim=0), torch.cat(attention_masks, dim=0)
 
-
     def remove_special_characters(self, review_text):
         
         # Remove HTML Tags
@@ -79,7 +78,7 @@ class preprocMovieReview:
         review_text = html_parser.get_text()
 
         # Remove non alpha numeric
-        pattern = r'[^a-zA-z0-9\s]'
+        pattern = r'[^a-zA-z0-9]'
         review_text = re.sub(pattern, ' ', review_text)
 
         # Replace multiple spaces with a single space
@@ -104,7 +103,6 @@ class preprocMovieReview:
         stemmer = PorterStemmer()
         tokens = [stemmer.stem(token) for token in tokens]
         return tokens
-    
 
 class preprocMedicalAppointment:
 

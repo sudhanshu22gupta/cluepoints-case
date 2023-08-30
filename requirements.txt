@@ -12,3 +12,5 @@ giskard
 xgboost
 seaborn
 joblib
+skopt
+tensorflow

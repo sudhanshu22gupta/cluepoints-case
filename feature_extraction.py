@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from itertools import islice
 
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
@@ -9,12 +10,17 @@ from scipy.stats import spearmanr
 from scipy.cluster import hierarchy as hc
 from collections import defaultdict
 import matplotlib.pyplot as plt
-from classification import RandomForestClassifier, RandomForestClf, MLPClf
+from classification import RandomForestClassifier
+
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.layers import Embedding
+from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 class textVectorizer:
 
-    def __init__(self, vectorizer_type) -> None:
+    def __init__(self, vectorizer_type, vocab_size=10_000) -> None:
         
+        self.vocab_size = vocab_size
         if vectorizer_type == 'tfidf':
             self.initialize_tfidf_vectorizer()
         elif vectorizer_type == 'count':
@@ -23,16 +29,69 @@ class textVectorizer:
             raise NotImplementedError
     
     def initialize_tfidf_vectorizer(self):
-        self.vectorizer = TfidfVectorizer(min_df=0.0, max_df=1.0, use_idf=True, ngram_range=(1,3), max_features=10_000)
+        self.vectorizer = TfidfVectorizer(
+            min_df=0.0, 
+            max_df=1.0, 
+            use_idf=True, 
+            ngram_range=(1,3), 
+            max_features=self.vocab_size,
+        )
 
     def initialize_count_vectorizer(self):
-        self.vectorizer = CountVectorizer(min_df=0.0, max_df=1.0, binary=False, ngram_range=(1,3))
+        self.vectorizer = CountVectorizer(
+            min_df=0.0, 
+            max_df=1.0, 
+            binary=False, 
+            ngram_range=(1,3), 
+            max_features=self.vocab_size,
+        )
 
     def apply_transform_train(self, reviews):
         return self.vectorizer.fit_transform(reviews)
 
     def apply_transform_test(self, reviews):
         return self.vectorizer.transform(reviews)
+
+class gloveVectorizer:
+
+    def __init__(self, X_train, embedding_dim, vocab_size, max_sequence_length) -> None:
+        self.EMBEDDING_DIM = embedding_dim
+        self.VOCAB_SIZE = vocab_size
+        self.MAX_SEQUENCE_LENGTH = max_sequence_length
+        self.GLOVE_EMB_PATH = f'./assets/glove.6B.{self.EMBEDDING_DIM}d.txt'
+        self.create_tokenizer(X_train)
+        self.embedding_matrix = self.read_glove_embeddings()
+
+    def create_tokenizer(self, reviews):
+        self.tokenizer = Tokenizer(num_words=self.VOCAB_SIZE, oov_token='UNK')
+        self.tokenizer.fit_on_texts(reviews)
+        # self.vocab = list(self.tokenizer.word_index.keys())[:self.VOCAB_SIZE]
+        self.text_sequence = self.tokenizer.texts_to_sequences(reviews)
+        self.text_sequence = pad_sequences(self.text_sequence, maxlen=self.MAX_SEQUENCE_LENGTH)
+
+    def read_glove_embeddings(self):
+        embeddings_index = {}
+        with open(self.GLOVE_EMB_PATH, 'rt') as f:
+            for line in f.readlines():
+                values = line.split()
+                word = values[0]
+                word_vector = np.asarray(values[1:], dtype='float32')
+                embeddings_index[word] = word_vector
+
+        embedding_matrix = np.zeros((len(self.tokenizer.word_index), self.EMBEDDING_DIM))
+        for word, i in self.tokenizer.word_index.items():
+            embedding_value = embeddings_index.get(word)
+            if embedding_value is not None:
+                embedding_matrix[i] = embedding_value
+
+        return embedding_matrix
+
+    def apply_transform_train(self, reviews):
+        self.create_tokenizer(reviews)
+        return self.tokenizer.texts_to_matrix(reviews)
+
+    def apply_transform_test(self, reviews):
+        return self.tokenizer.texts_to_matrix(reviews)
 
 class featuresMedicalAppointment:
 
