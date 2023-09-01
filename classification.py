@@ -281,7 +281,7 @@ class BiLSTMClf:
             ax.set_ylim(-0.1, 1.1)
             ax.legend()
         
-        plt.savefig(os.path.join(self.SAVE_DIR, f'{datetime.now().strftime("%Y%m%d%H%M%S")}_BiLSTM_classifier_Train_Val_Performance'))
+        plt.savefig(os.path.join(self.SAVE_DIR, f'{datetime.now().strftime("%Y%m%d%H%M%S")}_BiLSTM_classifier_Train_Val_Performance.png'))
         plt.show()
 
     def evaluate_classifier(self, y_true, y_pred):
