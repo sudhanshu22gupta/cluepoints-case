@@ -24,7 +24,7 @@ class preprocMovieReview:
             review_text =  self.remove_special_characters(review_text)
             tokens = self.tokenize(review_text)
             tokens = self.remove_stopwords(tokens)
-            tokens = self.stemming(tokens)
+            # tokens = self.stemming(tokens)
 
             review_text_filtered = ' '.join(tokens)
             self.ds_review_text_filtered.iloc[i] = review_text_filtered
@@ -80,6 +80,7 @@ class preprocMovieReview:
         # Remove non alpha numeric
         pattern = r'[^a-zA-z0-9]'
         review_text = re.sub(pattern, ' ', review_text)
+        review_text = review_text.replace("\\", "")
 
         # Replace multiple spaces with a single space
         review_text = re.sub(r'\s+', ' ', review_text)
@@ -95,7 +96,7 @@ class preprocMovieReview:
     def remove_stopwords(self, tokens: List):
 
         stopword_list = stopwords.words('english')
-        tokens = [token for token in tokens if token.lower() not in stopword_list]
+        tokens = [token.lower() for token in tokens if token.lower() not in stopword_list]
         return tokens
 
     def stemming(self, tokens: List):

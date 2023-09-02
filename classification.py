@@ -11,21 +11,21 @@ import pandas as pd
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.optim import Adam
+from torch.optim import AdamW
 from torch.utils.data import DataLoader, TensorDataset
 
 import tensorflow as tf
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Input, Conv1D, Bidirectional, LSTM, SpatialDropout1D, Embedding
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
+from tensorflow.keras.layers import Dense, Dropout, Input, Bidirectional, LSTM
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, TensorBoard
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.losses import BinaryCrossentropy
 from tensorflow.keras.metrics import BinaryCrossentropy, Precision, Recall
-from tensorflow.keras.regularizers import l2 as l2_reg
 from scipy.sparse import csr_matrix
 
 import os
 import traceback
+from tqdm import tqdm
 from datetime import datetime
 from IPython.display import clear_output
 import matplotlib.pyplot as plt
@@ -147,29 +147,22 @@ class BiLSTMClf:
         self.create_callbacks()
 
     def create_model_BiLSTM(self, ):
-
-        # self.model = Sequential()
-        # self.model.add(Embedding(input_dim=self.VOCAB_SIZE, output_dim=128))
-        # # self.model.add(SpatialDropout1D(0.2))
-        # # self.model.add(Conv1D(64, 5, activation=self.HIDDEN_ACTIVATION))
-        # self.model.add(Bidirectional(LSTM(128, dropout=0.2, recurrent_dropout=0.2)))
-        # self.model.add(Dense(512, activation=self.HIDDEN_ACTIVATION, kernel_regularizer=l2_reg(self.L2_REG_PENALTY)))
-        # self.model.add(Dropout(0.2))
-        # self.model.add(Dense(512, activation=self.HIDDEN_ACTIVATION, kernel_regularizer=l2_reg(self.L2_REG_PENALTY)))
-        # self.model.add(Dense(1, activation='sigmoid'))
-
+        
+        # Initlaize Sequential Model
         self.model = tf.keras.Sequential()
         # Embedding layer
-        self.model.add(Embedding(
-            input_dim=self.VOCAB_SIZE, 
-            input_length=self.MAX_SEQUENCE_LENGTH,
-            output_dim=128,
-            ))  # You can adjust the embedding dimension
-        # Bidirectional LSTM layer
-        self.model.add(Bidirectional(LSTM(128)))  # You can adjust the number of units
-        # Dense layer for binary classification
+        self.model.add(Input(shape=(self.MAX_SEQUENCE_LENGTH, self.EMBEDDING_DIM)))
+        # Bidirectional LSTM layer with dropout
+        self.model.add(Bidirectional(LSTM(128, return_sequences=True, dropout=0.2, recurrent_dropout=0.2)))
+        # Bidirectional LSTM layer with dropout
+        self.model.add(Bidirectional(LSTM(64, return_sequences=True, dropout=0.2, recurrent_dropout=0.2)))
+        # Global Max Pooling layer
+        self.model.add(tf.keras.layers.GlobalMaxPooling1D())
+        # Fully connected layer with dropout
+        self.model.add(Dense(64, activation='relu'))
+        self.model.add(Dropout(0.2))  # Adjust dropout rate
+        # Output layer for binary classification
         self.model.add(Dense(1, activation='sigmoid'))
-
         print(self.model.summary())
 
     def create_callbacks(
@@ -178,8 +171,6 @@ class BiLSTMClf:
         patience_es=20,
         patience_rlrop=10,
         factor_rlopl=0.1,
-        model_id=None,
-        chkpt_save_freq=25,
         tensorboard_histogram_freq=25,
     ):
         
@@ -205,17 +196,6 @@ class BiLSTMClf:
             )
             self.callbacks.append(rlrop)
 
-        if "chkpt" in self.CALLBACKS:
-            checkpoint_path = os.path.join(self.SAVE_DIR, f"checkpoint_{model_id}.ckpt")
-            chkpt = ModelCheckpoint(
-                filepath=checkpoint_path,
-                verbose=1,
-                save_weights_only=False,
-                save_best_only=True,
-                save_freq=chkpt_save_freq,
-            )
-            self.callbacks.append(chkpt)
-
         if "tensorboard" in self.CALLBACKS:
             tensorboard_logdir = os.path.join(self.SAVE_DIR)
             if not os.path.exists(tensorboard_logdir):
@@ -239,9 +219,6 @@ class BiLSTMClf:
 
     def fit_classifier(self, X_train, y_train, X_val, y_val):
         try:
-            X_train = X_train.toarray()
-            X_val = X_val.toarray()
-
             self.history = self.model.fit(
                 x=X_train,
                 y=y_train,
@@ -261,10 +238,10 @@ class BiLSTMClf:
     def plot_history(self):
         """
         Plot Metrics: Loss, Precision and Recall across epochs for both train and validation sets.
-        Maybe not needed after tensorboard
         """
+        plot_metrics = ['loss', 'precision', 'recall']
         fig, axs = plt.subplots(1, 3, sharey=True, figsize=(18, 6))
-        for i, metric in enumerate(['loss', 'precision', 'recall']):
+        for i, metric in enumerate(plot_metrics):
             ax = axs[i]
 
             metric_key = metric
@@ -274,7 +251,6 @@ class BiLSTMClf:
                     break
             ax.plot(self.history.history[f'{metric_key}'], label='train')
             ax.plot(self.history.history[f'val_{metric_key}'], label='val')
-            
             ax.set_title(f'{metric}')
             ax.set_xlabel('Epochs')
             ax.set_ylabel(metric)
@@ -294,9 +270,7 @@ class BiLSTMClf:
         return precision, recall, f1, accuracy
 
     def predict_classifier(self, X):
-        X = X.toarray()
         return np.hstack(self.model.predict(X) > 0.5).astype(int)
-
 
 class DistilBERTClassifier(nn.Module):
 
@@ -306,10 +280,9 @@ class DistilBERTClassifier(nn.Module):
         self.classifier = DistilBertForSequenceClassification.from_pretrained(
             "distilbert-base-uncased", 
             num_labels=2,
-            # seq_classif_dropout=0.3,
         )
         self.classifier.to(self.device)
-        self.optimizer = Adam(self.parameters(), lr=1e-5)
+        self.optimizer = AdamW(self.parameters(), lr=1e-3)
 
     def preprocess_input(self, X_train, y_train, max_len=512):
         # create tokenized data
@@ -319,7 +292,25 @@ class DistilBERTClassifier(nn.Module):
         labels = torch.tensor(y_train, dtype=torch.long)
         return TensorDataset(input_ids, attention_masks, labels)
 
-    def fit_classifier(self, X_train, y_train, X_val, y_val, batch_size=8, n_epochs=2):
+    def _train_step(self, train_data_batch):
+        token_ids, masks, labels = tuple(t.to(self.device) for t in train_data_batch)
+        model_output_train = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
+        batch_loss_train = model_output_train.loss
+        self.train_loss += batch_loss_train.item()
+        self.zero_grad()
+        batch_loss_train.backward()
+        nn.utils.clip_grad_norm_(parameters=self.classifier.parameters(), max_norm=1.0)
+        self.optimizer.step()
+
+    def _val_step(self, val_data_batch):
+        token_ids, masks, labels = tuple(t.to(self.device) for t in val_data_batch)
+        model_output_val = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
+        self.val_loss += model_output_val.loss.item()
+        val_logits = model_output_val.logits.cpu().detach().numpy()
+        preds = np.append(preds, np.argmax(val_logits, axis=1).flatten())
+
+
+    def fit_classifier(self, X_train, y_train, X_val, y_val, batch_size=16, n_epochs=2):
 
         self.dl_params = {
             'batch_size': batch_size,
@@ -330,41 +321,70 @@ class DistilBERTClassifier(nn.Module):
         val_dataset = self.preprocess_input(X_val, y_val)
         self.dataloader_train = DataLoader(train_dataset, **self.dl_params)
         self.dataloader_val = DataLoader(val_dataset, **self.dl_params)
-
+        self.history = {
+            "epoch": [],
+            "train_loss": [],
+            "val_loss": [],
+        }
         for epoch_num in range(n_epochs):
+
             self.train()
-            train_loss = 0
+            self.train_loss = 0
+            progress_bar = tqdm(total=len(self.dataloader_train), desc='Training Progress', position=0)
             for step_num, train_data_batch in enumerate(self.dataloader_train):
-                token_ids, masks, labels = tuple(t.to(self.device) for t in train_data_batch)
-                model_output = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
-                
-                batch_loss = model_output.loss
-                train_loss += batch_loss.item()
+                # Training Step
+                self._train_step(train_data_batch)
+                # Update the progress bar
+                progress_bar.set_postfix(epoch=epoch_num+1, train_loss=self.train_loss/(step_num+1))
+                progress_bar.update()
+            # Close the progress bar at end of epoch
+            progress_bar.close()
 
-                self.zero_grad()
-                batch_loss.backward()
+            self.eval()
+            self.val_loss = 0
+            progress_bar = tqdm(total=len(self.dataloader_val), desc='Validation Progress', position=0)
+            for step_num, val_data_batch in enumerate(self.dataloader_val):
+                # Training Step
+                self._val_step(val_data_batch)
+                # Update the progress bar
+                progress_bar.set_postfix(epoch=epoch_num+1, val_loss=self.val_loss/(step_num+1))
+                progress_bar.update()
+            # Close the progress bar at end of epoch
+            progress_bar.close()
 
-                nn.utils.clip_grad_norm_(parameters=self.classifier.parameters(), max_norm=1.0)
-                self.optimizer.step()
-                
-                clear_output(wait=True)
-                print('Epoch: ', epoch_num + 1)
-                print("\r" + "{0}/{1} loss: {2} ".format(step_num, len(self.dataloader_train), train_loss / (step_num + 1)))
+            # Record metrics
+            self.history["epoch"].append(epoch_num+1)
+            self.history["train_loss"].append(self.train_loss/(step_num+1))
+            self.history["val_loss"].append(self.val_loss/(step_num+1))
+        
+        self.plot_history()
         torch.cuda.empty_cache()
+
+    def plot_history(self):
+        """
+        Plot Metrics: Loss across epochs for both train and validation sets.
+        """
+        plt.figure(figsize=(6, 6))
+        plt.plot(self.history['train_loss'], label='train')
+        plt.plot(self.history['val_loss'], label='val')
+        plt.title('Loss across Epochs')
+        plt.xlabel('Epochs')
+        plt.ylabel("Loss")
+        plt.ylim(-0.1, 1.1)
+        plt.legend()
+        plt.show()
 
     def predict_classifier(self, X_test, y_test):
         test_dataset = self.preprocess_input(X_test, y_test)
         self.dataloader_test = DataLoader(test_dataset, **self.dl_params)
         self.eval()
-        preds = np.array()
+        preds = np.array([])
         with torch.no_grad():
             for step_num, batch_data in enumerate(self.dataloader_test):
                 token_ids, masks, labels = tuple(t.to(self.device) for t in batch_data)
                 model_output = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
                 numpy_logits = model_output.logits.cpu().detach().numpy()
                 preds = np.append(preds, np.argmax(numpy_logits, axis=1).flatten())
-                clear_output(wait=True)
-                print("\r" + "{0}/{1}".format(step_num, len(self.dataloader_test)))
         return preds
 
     def evaluate_classifier(self, y_true, y_pred):
