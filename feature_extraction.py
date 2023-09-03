@@ -123,6 +123,14 @@ class featuresMedicalAppointment:
         self.infrequent_values = {}
 
     def feat_minmax_norm_train(self, df_medical_appointment, columns_to_scale):
+        """
+         Fit and transform features with MinMaxScaler.
+         
+         @param df_medical_appointment - Dataframe with medical appointment features
+         @param columns_to_scale - List of columns to scale
+         
+         @return Same dataframe with scaling applied to each column in columns_to_scale
+        """
         for column in columns_to_scale:
             try:
                 assert column in df_medical_appointment.columns
@@ -134,6 +142,14 @@ class featuresMedicalAppointment:
         return df_medical_appointment
 
     def feat_minmax_norm_test(self, df_medical_appointment, columns_to_scale):
+        """
+         transform features with MinMaxScaler.
+         
+         @param df_medical_appointment - Dataframe with medical appointment features
+         @param columns_to_scale - list of columns to scale
+         
+         @return Same dataframe with scaling applied to each column in columns_to_scale
+        """
         for column in columns_to_scale:
             try:
                 assert column in df_medical_appointment.columns
@@ -147,19 +163,37 @@ class featuresMedicalAppointment:
             self.minmax_scalers[column] = minmax_scaler
         return df_medical_appointment
 
-    def feat_n_hours_scheduled_before(self, df_medical_appointment, scheduled_after_appointment_strategy):
+    def feat_n_hours_scheduled_before(self, df_medical_appointment, target_labels, scheduled_after_appointment_strategy):
+        """
+         Feature the number of hours scheduled before a medical appointment.
+         
+         @param df_medical_appointment - DataFrame of the medical appointment data
+         @param target_labels - array oftarget label indicating show / no-show
+         @param scheduled_after_appointment_strategy - how to deal with an appointment scheduled after the appointment
+         
+         @return a DataFrame with feature'n_hours_scheduled_before
+        """
         df_medical_appointment['n_hours_scheduled_before'] = (pd.to_datetime(df_medical_appointment['AppointmentDay']) - pd.to_datetime(df_medical_appointment['ScheduledDay'])).apply(lambda x: round(x.total_seconds()/3600))
-        # Schedule Datetime > Appointment Datetime ==0> probably entry mistakes ==> replace with nan or 0
+        # Schedule Datetime > Appointment Datetime ==0> probably entry mistakes ==> replace with nan or 0 or drop
         if isinstance(scheduled_after_appointment_strategy, (int, float)):
             df_medical_appointment.loc[df_medical_appointment['n_hours_scheduled_before'] < 0, 'n_hours_scheduled_before'] = scheduled_after_appointment_strategy
         elif scheduled_after_appointment_strategy.lower()=='drop':
-            df_medical_appointment = df_medical_appointment.loc[~(df_medical_appointment['n_hours_scheduled_before'] < 0)]
+            scheduled_after_appointment_mask = ~(df_medical_appointment['n_hours_scheduled_before'] < 0)
+            df_medical_appointment = df_medical_appointment.loc[scheduled_after_appointment_mask]
+            target_labels = target_labels[scheduled_after_appointment_mask]
             df_medical_appointment.reset_index(drop=True, inplace=True)
         else:
             raise Exception("invalid value for scheduled_after_appointment_strategy")
-        return df_medical_appointment
+        return df_medical_appointment, target_labels
     
     def feat_appointment_date(self, df_medical_appointment):
+        """
+         Featurize medical appointment date. This is a function to extract features from appointment date.
+         
+         @param df_medical_appointment - pandas DataFrame of appointment features
+         
+         @return a pandas DataFrame with extra features extrated from AppointmentDay
+        """
         df_medical_appointment['AppointmentDay'] = pd.to_datetime(df_medical_appointment['AppointmentDay'])
         df_medical_appointment['day_of_month'] = df_medical_appointment['AppointmentDay'].apply(lambda x: x.day)
         df_medical_appointment['day_of_week'] = df_medical_appointment['AppointmentDay'].apply(lambda x: x.day_name())
@@ -168,6 +202,12 @@ class featuresMedicalAppointment:
         return df_medical_appointment
 
     def feat_categorical_to_one_hot_encoding_train(self, df_medical_appointment, infrequent_threshold=20):
+        """
+         This is a training method that uses the OneHotEncoder to encode categorical features.
+         
+         @param df_medical_appointment - Data frame with categorical features
+         @param infrequent_threshold - Threshold for how many values to consider an infrequent feature
+        """
         self.categorical_feature_columns = ['Gender', 'Neighbourhood', 'day_of_week']
         self.infrequent_threshold = infrequent_threshold
         for column in self.categorical_feature_columns:
@@ -188,6 +228,12 @@ class featuresMedicalAppointment:
         return df_medical_appointment
     
     def feat_categorical_to_one_hot_encoding_test(self, df_medical_appointment):
+        """
+         This is a transform method that uses the trained OneHotEncoder to encode categorical features.
+         
+         @param df_medical_appointment - Data frame with categorical features
+         @param infrequent_threshold - Threshold for how many values to consider an infrequent feature
+        """
         for column in self.categorical_feature_columns:
             infrequent_values = self.infrequent_values[column]
             df_medical_appointment[column].replace(infrequent_values, 'INFREQUENT', inplace=True)
@@ -206,6 +252,11 @@ class featuresMedicalAppointment:
         return df_medical_appointment
 
     def plot_optimal_PCA_components(self, df_medical_appointment):
+        """
+         Plot PCA components with optimal explained variance ratio vs. number of components
+         
+         @param df_medical_appointment - Dataframe with medical appointments
+        """
         
         max_components = len(df_medical_appointment.columns)
         # Fit PCA with different numbers of components
@@ -225,15 +276,41 @@ class featuresMedicalAppointment:
         plt.show()
 
     def feat_PCA_train(self, df_medical_appointment, n_components):
+        """
+         Trains PCA and transforms the input to reduce to selected number of dimensions.
+         
+         @param df_medical_appointment - pandas DataFrame with the features
+         @param n_components - number of components
+         
+         @return a pandas DataFrame reduced to n_components latent dimensions
+        """
         self.pca = PCA(n_components=n_components)
         pca_transfomed = self.pca.fit_transform(df_medical_appointment)
         return pd.DataFrame(pca_transfomed, columns=[f"feature_{i}" for i in range(n_components)])
 
     def feat_PCA_test(self, df_medical_appointment):
+        """
+         transforms the input to reduce to selected number of dimensions using PCA.
+         
+         @param df_medical_appointment - pandas DataFrame with the features
+         
+         @return : a pandas DataFrame reduced to n_components latent dimensions
+        """
         pca_transfomed = self.pca.transform(df_medical_appointment)
         return pd.DataFrame(pca_transfomed, columns=[f"feature_{i}" for i in range(self.pca.n_components)])
 
 def feature_selection_permutation_importance(df_features, target, n_repeats=8, n_jobs=8, plot=True):
+    """
+    Feature selection permutation importance for random forest classifier.
+    
+    @param df_features - Dataframe containing features to be used
+    @param target - array containing target features
+    @param n_repeats - Number of repetitions for parallel training
+    @param n_jobs - Number of parallel jobs to use for parallel training
+    @param plot - Whether or not to plot results
+    
+    @return A dataframe containing feature importances in descending order of importance
+    """
 
     clf = RandomForestClassifier()
     clf.fit(df_features, target)
@@ -250,6 +327,7 @@ def feature_selection_permutation_importance(df_features, target, n_repeats=8, n
     df_feature_importances = df_feature_importances.sort_values(by='coef', ascending=False)
     df_feature_importances.reset_index(drop=True, inplace=True)
 
+    # Plot feature importances of the feature importances.
     if plot:
         N_FEATS_PLOT = len(df_feature_importances)
         plt.figure(figsize=(30, 40))
@@ -263,20 +341,44 @@ def feature_selection_permutation_importance(df_features, target, n_repeats=8, n
     return df_feature_importances
 
 def get_high_perm_imp_feat(df_feature_importances, features_list, threshold_importance=None):
+    """
+     Get features with high permutation importance.
+     
+     @param df_feature_importances - Pandas dataframe with feature importances
+     @param features_list - list of features to check for high permutated features
+     @param threshold_importance - threshold to use for feature importance
+     
+     @return a pandas dataframe with feature importance or None if threshold
+    """
     df_ = df_feature_importances.copy()
     df_ = df_.loc[df_.index.isin(features_list)]
     df_ = df_.sort_values(by='coef', ascending=False)
+    # If threshold_importance is defined, check if features greater than that threshold are present int he dataset.
+    # Else take the most important feature from the cluster
     if threshold_importance:
+        # If the importance threshold is less than threshold_importance return None. (entire cluster is discarded)
         if df_.iloc[0]['coef'] < threshold_importance:
             return None
     return df_.index.values[0]
 
 def feature_selection_hierarchical_clustering(df_features, threshold_clustering, df_feature_importances, threshold_importance=None, plot=True):
+    """
+    Hierarchical clustering of features based on feature importancies.
+    
+    @param df_features - pandas DataFrame with features. Each row is a feature
+    @param threshold_clustering - float threshold to cluster features. This is the number of clusters that should be considered equal to the number of features.
+    @param df_feature_importances - pandas DataFrame with importances of features. Each row is a feature and each column is a feature importance.
+    @param threshold_importance - float threshold to use for feature importance. If None no threshold is used.
+    @param plot - bool plot or not. Default is True.
+    
+    @return dict mapping cluster_id to list of feature ids
+    """
 
     corr = np.round(spearmanr(df_features).correlation, 4)
     corr_condensed = hc.distance.squareform(1 - corr)
     z = hc.linkage(corr_condensed, method='average')
     features_list = df_features.columns
+    # plot the dendrogram and show the plot
     if plot:
         plt.figure(figsize=(50,40))
         hc.dendrogram(z, labels=features_list, orientation='top', leaf_font_size=16)
@@ -287,6 +389,7 @@ def feature_selection_hierarchical_clustering(df_features, threshold_clustering,
     cluster_ids = hc.fcluster(z, t=threshold_clustering, criterion="distance")
     cluster_id_to_feature_ids = defaultdict(list)
 
+    # Add cluster_id to feature_ids.
     for idx, cluster_id in enumerate(cluster_ids):
         cluster_id_to_feature_ids[cluster_id].append(idx)
     

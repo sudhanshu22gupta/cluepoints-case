@@ -12,6 +12,6 @@ giskard
 xgboost
 seaborn
 joblib
-skopt
+scikit-optimize
 tensorflow
 tqdm

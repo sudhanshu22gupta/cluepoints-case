@@ -15,10 +15,21 @@ from bs4 import BeautifulSoup
 class preprocMovieReview:
 
     def __init__(self, ds_review_text) -> None:
+        """
+         Initialize the class.
+         
+         @param ds_review_text - pd.Series with reviews
+        """
         self.ds_review_text = ds_review_text
         self.ds_review_text_filtered = pd.Series(['']*len(ds_review_text))
 
     def basic_text_sanitization_pipeline(self):
+        """
+        Basic text sanitization pipeline. Removes special characters tokenizes stopwords stemming and strips whitespace.
+        
+        
+        @return a dataframe with sanitized review text for use in review
+        """
 
         for i, review_text in enumerate(self.ds_review_text):
             review_text =  self.remove_special_characters(review_text)
@@ -31,15 +42,14 @@ class preprocMovieReview:
 
         return self.ds_review_text_filtered
 
-    def tensorflow_text_sanitization_pipeline(self):
-        tokenizer = AutoTokenizer.from_pretrained("distilbert-base-uncased")
-        
-        for i, review_text in enumerate(self.ds_review_text):
-            review_text_filtered = tokenizer(review_text, truncation=True)
-            self.ds_review_text_filtered.iloc[i] = review_text_filtered
-        return self.ds_review_text_filtered
-
     def distilbert_text_sanitization_pipeline(self, max_len):
+        """
+         This pipeline takes a list of review texts and sanitizes them to a format compatible with (Distil)BERT Classifer
+         
+         @param max_len - The maximum length of sequence
+         
+         @return tensors of tokenized sentence and their attention masks
+        """
         self.tokenizer = AutoTokenizer.from_pretrained('distilbert-base-cased')
         # token ID storage
         input_ids = []
@@ -47,13 +57,13 @@ class preprocMovieReview:
         attention_masks = []
         # for every review:
         for review_text in self.ds_review_text:
-            # `encode_plus` will:
-            #   (1) Tokenize the sentence.
-            #   (2) Prepend the `[CLS]` token to the start.
-            #   (3) Append the `[SEP]` token to the end.
-            #   (4) Map tokens to their IDs.
-            #   (5) Pad or truncate the sentence to `max_length`
-            #   (6) Create attention masks for [PAD] tokens.
+            # This will:
+            # Tokenize the sentence.
+            # Prepend the `[CLS]` token to the start.
+            # Append the `[SEP]` token to the end.
+            # Map tokens to their IDs.
+            # Pad or truncate the sentence to `max_length`
+            # Create attention masks for [PAD] tokens.
             encoded_dict = self.tokenizer.encode_plus(
                                 review_text,  # document to encode.
                                 add_special_tokens=True,  # add '[CLS]' and '[SEP]'
@@ -66,12 +76,21 @@ class preprocMovieReview:
 
             # add the tokenized sentence to the list
             input_ids.append(encoded_dict['input_ids'])
-            # and its attention mask (differentiates padding from non-padding)
+            # and its attention mask
             attention_masks.append(encoded_dict['attention_mask'])
 
         return torch.cat(input_ids, dim=0), torch.cat(attention_masks, dim=0)
 
     def remove_special_characters(self, review_text):
+        """
+         Remove special characters from review text. 
+         This is used to prevent HTML tags from appearing in the review text 
+         and also remove non alpha numeric characters
+         
+         @param review_text - Text to be cleaned. Should be plain text.
+         
+         @return Clean text
+        """
         
         # Remove HTML Tags
         html_parser = BeautifulSoup(review_text, "html.parser")
@@ -88,18 +107,38 @@ class preprocMovieReview:
         return review_text
 
     def tokenize(self, review_text):
-
+        """
+        Tokenize and strip whitespace. This is used to tokenize a review's text into a list of tokens.
+        
+        @param review_text - The text to tokenize.
+        
+        @return A list of tokens in the format described in word_tokenize
+        """
         tokens = word_tokenize(review_text)
         tokens = [token.strip() for token in tokens]
         return tokens
 
     def remove_stopwords(self, tokens: List):
+        """
+        Remove stopwords (words with low meaning) from a list of tokens.
+        
+        @param tokens - List of tokens to be filtered.
+        
+        @return List of filtered tokens after removing stopwords from it
+        """
 
         stopword_list = stopwords.words('english')
         tokens = [token.lower() for token in tokens if token.lower() not in stopword_list]
         return tokens
 
     def stemming(self, tokens: List):
+        """
+        Stem a list of tokens. This is a wrapper around PorterStemmer
+        
+        @param tokens - The list of tokens to stem
+        
+        @return The list of stemmed tokens
+        """
 
         stemmer = PorterStemmer()
         tokens = [stemmer.stem(token) for token in tokens]
@@ -111,6 +150,15 @@ class preprocMedicalAppointment:
         pass
 
     def remove_outliers_age(self, df_medical_appointment, keep_range=(0, 100)):
+        """
+         Remove records whose age is outside the keep_range.
+         
+         @param df_medical_appointment - Data frame of appointments
+         @param keep_range - Range to keep ( min max )
+         
+         @return Data frame of the same type as df_medical
+        """
+        
         return df_medical_appointment.loc[
             (df_medical_appointment['Age'] >= keep_range[0])
             & (df_medical_appointment['Age'] <= keep_range[1])

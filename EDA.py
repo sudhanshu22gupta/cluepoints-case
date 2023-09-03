@@ -9,6 +9,13 @@ import numpy as np
 class EDA_movie_reviews:
 
     def __init__(self, df_movie_reviews, reviews_col, target_col) -> None:
+        """
+         Initialize the class.
+         
+         @param df_movie_reviews - pandas DataFrame with the reviews for the movie.
+         @param reviews_col - string column name of the column that contains the list of ratings.
+         @param target_col - string column name of the target column.
+        """
         self.df_movie_reviews = df_movie_reviews
         self.reviews_col = reviews_col
         self.target_col = target_col
@@ -18,7 +25,11 @@ class EDA_movie_reviews:
         self.df_negative_reviews = self.df_movie_reviews.loc[self.df_movie_reviews[self.target_col] == 0]
 
     def visualize_wordcloud(self):
+        """
+         Visualize wordcloud for each review type.
+        """
         fig, axs = plt.subplots(ncols=2, figsize=(18, 10))
+        # Generate a Wordcloud plot for each review type.
         for i, (reviews_type, df_reviews) in enumerate([("POSITIVE", self.df_positive_reviews), ("NEGATIVE", self.df_negative_reviews)]):
             wordcloud = WordCloud(max_font_size=50, max_words=100, background_color="white", stopwords = STOPWORDS).generate(str(df_reviews[self.reviews_col]))
             ax = axs[i]
@@ -28,18 +39,31 @@ class EDA_movie_reviews:
         plt.show()
 
     def visulaize_class_distribution(self):
+        """
+         Visualize the class distribution of the reviews.
+        """
         self.df_movie_reviews[self.target_col].value_counts().plot(kind="bar")
         plt.title("Class Distribution\n(0=NEGATIVE, 1=POSITIVE)")
         plt.ylabel("Count")
         plt.show()
 
     def statistics_on_review_text(self):
-        """count of tokens per review"""
+        """
+         Print statistics on number of tokens per review.
+        """
+        # Statistics on count of tokens per movie review
         for reviews_type, df_reviews in [("POSITIVE", self.df_positive_reviews), ("NEGATIVE", self.df_negative_reviews)]:
             print(f"Statistics on count of tokens per {reviews_type} movie review")
             display(df_reviews["n_tokens"].describe(percentiles=[0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 0.95]))
 
     def show_common_n_grams(self, n=3, show_count=20):
+        """
+         Show the most common n - grams for each reviews type.
+
+         @param n - number of words to use for ngrams
+         @param show_count - number of words to show per type
+        """
+        # prints the most common ngrams for the given type
         for reviews_type, df_reviews in [("POSITIVE", self.df_positive_reviews), ("NEGATIVE", self.df_negative_reviews)]:
             text_ngrams = [ngram for review_text in df_reviews[self.reviews_col] for ngram in ngrams(review_text.split(), n)]
             most_common_ngrams = Counter(text_ngrams).most_common(show_count)
@@ -47,18 +71,28 @@ class EDA_movie_reviews:
             print(f"most common {n}-grams for {reviews_type}:")
             print('-'*50)
             print("n_grams -- occurence_counts")
+            # Print the most common n grams and occurence counts.
             for n_grams, occurence_counts in most_common_ngrams:
                 print(n_grams, "--", occurence_counts)
 
 class EDA_medical_appointment:
 
     def __init__(self, df_medical_appointment_features, target_labels) -> None:
+        """
+         Initialize the class.
+         
+         @param df_medical_appointment_features - pandas DataFrame with the features
+         @param target_labels - np.array of target labels 
+        """
         self.df_medical_appointment = df_medical_appointment_features
         self.target_labels = target_labels
         self.numeric_feature_columns = ['Age']
         self.categorical_feature_columns = ['Gender', 'Neighbourhood', 'Scholarship', 'Hypertension', 'Diabetes', 'Alcoholism', 'Handicap', 'SMS_received']
 
     def describe_general_stats(self):
+        """
+         Describe general stats and visualize them
+        """
         print("-"*50)
         print("Checking feature datatypes and null values")
         print("-"*50, end='\n\n')
@@ -72,8 +106,10 @@ class EDA_medical_appointment:
         print("-"*50)
         print("categorical features Probabilities")
         print("-"*50)
+        # Plot Independent Probability of Categorical Variable
         fig, axs = plt.subplots(figsize=(len(self.categorical_feature_columns)*2, 5), ncols=len(self.categorical_feature_columns), sharey=True)
         for cat_var, ax in zip(self.categorical_feature_columns, axs):
+            # taking Most Frequent 10 Neighbourhoods to make the plot readable
             if cat_var=='Neighbourhood':
                 cat_var_prob = self.df_medical_appointment[cat_var].value_counts().iloc[:10] / len(self.df_medical_appointment)
                 cat_var = "Most Frequent 10 Neighbourhoods"
@@ -89,6 +125,9 @@ class EDA_medical_appointment:
         plt.show()
 
     def stats_per_unique_patient(self):
+        """
+         Plot stats of visits per unique patient for each patient.
+        """
         df_medical_appointment_groupby_patient = self.df_medical_appointment.groupby('PatientID')
         df_medical_appointment_groupby_patient.count().sort_values(by=['AppointmentID'], ascending=False)['AppointmentID'].plot(kind='hist', density=True, bins=range(100))
         plt.xlabel('N Visits per unique patient')
@@ -107,6 +146,7 @@ class EDA_medical_appointment:
 
         fig, axs = plt.subplots(figsize=(len(self.categorical_feature_columns)*2, 5), ncols=len(self.categorical_feature_columns), sharey=True)
         for cat_var, ax in zip(self.categorical_feature_columns, axs):
+            # taking Most Frequent 10 Neighbourhoods to make the plot readable
             if cat_var=='Neighbourhood':
                 cat_var_counts = df_patient_last_appointment[cat_var].value_counts().iloc[:10] / len(df_patient_last_appointment)
                 cat_var = "Most Frequent 10 Neighbourhoods"
@@ -123,16 +163,23 @@ class EDA_medical_appointment:
 
 
     def visulaize_class_distribution(self):
+        """
+         Visualize the class distribution of the target data.
+        """
         pd.Series(self.target_labels).value_counts().plot(kind="bar")
         plt.title("Class Distribution\n(0=Show, 1=No Show)")
         plt.ylabel("Count")
         plt.show()
 
     def visulaize_no_show_prob_per_variable(self):
+        """
+         Visualize the Probability of Feature given No-Show, i.e., P(Feature|no_show)
+        """
         vars_categorical = self.categorical_feature_columns[:]
         vars_categorical.remove("Neighbourhood")
         fig, axs = plt.subplots(figsize=(len(vars_categorical)*2, 5), ncols=len(vars_categorical), sharey=True)
         df_no_show = self.df_medical_appointment.loc[self.target_labels==1]
+        # Plots the conditional probability of each categorical variable.
         for cat_var, ax in zip(vars_categorical, axs):
             cat_var_prob_no_show = df_no_show[cat_var].value_counts() / len(df_no_show)
             cat_var_prob_no_show.plot(kind="bar", ax=ax)
