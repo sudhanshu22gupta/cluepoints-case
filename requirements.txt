@@ -3,7 +3,6 @@ numpy
 pandas
 scikit-learn
 torch
-wordcloud
 nltk
 matplotlib
 transformers
@@ -15,3 +14,5 @@ joblib
 scikit-optimize
 tensorflow
 tqdm
+wordcloud==1.9.2
+pillow==9.5.0

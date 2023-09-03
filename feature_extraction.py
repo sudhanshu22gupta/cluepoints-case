@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from itertools import islice
 
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
@@ -12,10 +11,6 @@ from scipy.cluster import hierarchy as hc
 from collections import defaultdict
 import matplotlib.pyplot as plt
 from classification import RandomForestClassifier
-
-from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.layers import Embedding
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 class textVectorizer:
 
@@ -52,23 +47,6 @@ class textVectorizer:
 
     def apply_transform_test(self, reviews):
         return self.vectorizer.transform(reviews)
-
-def truncate_or_pad_sequences(sequences, max_sequence_length, padding_value=0):
-    """
-    Truncate or pad sequences to a specified maximum sequence length.
-    """
-    truncated_padded_sequences = []
-    for sequence in sequences:
-        if len(sequence) > max_sequence_length:
-            # Truncate if sequence is longer than max_sequence_length
-            truncated_sequence = sequence[:max_sequence_length]
-        else:
-            # Pad if sequence is shorter than max_sequence_length
-            padding_length = max_sequence_length - len(sequence)
-            padded_sequence = np.pad(sequence, (0, padding_length), mode='constant', constant_values=padding_value)
-            truncated_sequence = padded_sequence
-        truncated_padded_sequences.append(truncated_sequence)
-    return np.dstack(truncated_padded_sequences)
 
 class GloveVectorizer:
     def __init__(self, embedding_dim, vocab_size, max_sequence_length, glove_emb_path):

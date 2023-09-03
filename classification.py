@@ -179,11 +179,10 @@ class MLPClf(BinaryClassifier):
     def __init__(self) -> None:
         super().__init__()
         self.classifier = MLPClassifier(
-            hidden_layer_sizes = [512, 256, 64],
+            hidden_layer_sizes = [256, 64],
             warm_start=False, 
-            max_iter=1000, 
+            max_iter=100, 
             verbose=True,
-            class_weight=self.class_weight,
         )
 
 class XGBClf(BinaryClassifier):
@@ -230,14 +229,12 @@ class BiLSTMClf:
         # Embedding layer
         self.model.add(Input(shape=(self.MAX_SEQUENCE_LENGTH, self.EMBEDDING_DIM)))
         # Bidirectional LSTM layer with dropout
-        self.model.add(Bidirectional(LSTM(128, return_sequences=True, dropout=0.2, recurrent_dropout=0.2)))
-        # Bidirectional LSTM layer with dropout
         self.model.add(Bidirectional(LSTM(64, return_sequences=True, dropout=0.2, recurrent_dropout=0.2)))
         # Global Max Pooling layer
         self.model.add(tf.keras.layers.GlobalMaxPooling1D())
         # Fully connected layer with dropout
         self.model.add(Dense(64, activation='relu'))
-        self.model.add(Dropout(0.2))  # Adjust dropout rate
+        self.model.add(Dropout(0.2))
         # Output layer for binary classification
         self.model.add(Dense(1, activation='sigmoid'))
         print(self.model.summary())
@@ -438,6 +435,7 @@ class DistilBERTClassifier(nn.Module):
         loss = 0
         with torch.no_grad():
             for _, batch_data in enumerate(dataloader):
+                # Calculate loss when target labels are available
                 if len(batch_data) == 3:
                     token_ids, masks, labels = tuple(t.to(self.device) for t in batch_data)
                     model_output = self.classifier.forward(input_ids=token_ids, attention_mask=masks, labels=labels)
@@ -449,7 +447,7 @@ class DistilBERTClassifier(nn.Module):
                 preds = np.append(preds, np.argmax(logits, axis=1).flatten())
         return loss/(len(dataloader)+1), preds
 
-    def fit_classifier(self, X_train, y_train, X_val, y_val, batch_size=16, n_epochs=2):
+    def fit_classifier(self, X_train, y_train, X_val, y_val, batch_size=16, n_epochs=2, max_sequence_len=512, SAVE_DIR=None):
         """
         Fit the classifier. This is the main method for training.
         
@@ -466,8 +464,8 @@ class DistilBERTClassifier(nn.Module):
             'shuffle': True,
             'num_workers': 0
             }
-        train_dataset = self.preprocess_input(X_train, y_train)
-        val_dataset = self.preprocess_input(X_val, y_val)
+        train_dataset = self.preprocess_input(X_train, y_train, max_sequence_len)
+        val_dataset = self.preprocess_input(X_val, y_val, max_sequence_len)
         self.dataloader_train = DataLoader(train_dataset, **self.dl_params)
         self.dataloader_val = DataLoader(val_dataset, **self.dl_params)
         self.history = {
@@ -519,8 +517,13 @@ class DistilBERTClassifier(nn.Module):
             self.history["val_f1"].append(f1_val)
             self.history["val_accuracy"].append(accuracy_val)
         
-            print(self.history)
         self.plot_history()
+        if SAVE_DIR:
+            if not os.path.exists(SAVE_DIR):
+                os.mkdir(SAVE_DIR)
+            SAVE_FILENAME = os.path.join(SAVE_DIR, f'{datetime.now().strftime("%Y%m%d%H%M%S")}_DistilBERT_classifier')
+            torch.save(self.classifier, SAVE_FILENAME)
+            print(f"Model Saved at: {SAVE_FILENAME}")
         torch.cuda.empty_cache()
 
     def plot_history(self):
@@ -541,13 +544,13 @@ class DistilBERTClassifier(nn.Module):
         
         plt.show()
 
-    def predict_classifier(self, X_test):
+    def predict_classifier(self, X_test, max_sequence_len=512):
         """
          Predict class for test data.
          
          @param X_test - Test data to predict. Must be a Numpy array or a list of Numpy arrays ( if you want multiple datasets in your Keras
         """
-        test_dataset = self.preprocess_input(X_test, None)
+        test_dataset = self.preprocess_input(X_test, None, max_sequence_len)
         self.dataloader_test = DataLoader(test_dataset, **self.dl_params)
         _, preds_test = self._eval_step(self.dataloader_test)
         return preds_test
